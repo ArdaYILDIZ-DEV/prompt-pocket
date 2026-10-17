@@ -1,6 +1,6 @@
 {
   "name": "pi-prompt-pocket",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Save, find, edit and reuse titled prompts from Pi's editor.",
   "type": "module",
   "license": "MIT",
