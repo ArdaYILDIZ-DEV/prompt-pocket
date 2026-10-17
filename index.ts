@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { PocketMenu, displayText, type MenuAction } from "./menu.ts";
+import { MENU_OVERLAY_OPTIONS, PocketMenu, displayText, type MenuAction } from "./menu.ts";
 import { PromptStore, parseDocument, type SavedPrompt } from "./store.ts";
 
 export const SHORTCUT = "ctrl+alt+p";
@@ -46,7 +46,7 @@ export async function openPocket(ctx: ExtensionContext, store: PromptStore): Pro
 			// An overlay leaves the underlying editor, cursor, undo and large pastes untouched.
 			action = await ctx.ui.custom<MenuAction | undefined>((tui, theme, keys, done) =>
 				new PocketMenu(prompts, !!draft.trim(), theme, tui, keys, done, query),
-				{ overlay: true, overlayOptions: { width: "90%", maxHeight: "90%" } });
+				{ overlay: true, overlayOptions: MENU_OVERLAY_OPTIONS });
 			if (!action) return;
 			query = action.query;
 			if (action.kind === "save") {

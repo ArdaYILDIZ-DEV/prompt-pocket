@@ -33,6 +33,8 @@ This changes your personal Pi package settings. Run `/reload` in an existing Pi 
 
 With a nonblank draft, the first row is **Save current draft…**; pressing Enter there also opens the title dialog. Once you type a matching search, the matching saved prompt is selected instead. Prompts are sorted by last modification; search supports fuzzy matching and multiple words.
 
+The library is a centered, theme-colored overlay, up to 84 columns wide and 20 rows tall. Its size stays steady while filtering and moving between prompts, independently of the draft behind it. The list scrolls with the selection; previews wrap long lines. On smaller terminals, the panel reduces the list and preview before sacrificing search or keyboard controls. Very short screens omit the preview; all actions remain available from the keyboard.
+
 | In the menu | Action |
 |---|---|
 | Type | Search titles and prompt bodies |
@@ -100,7 +102,7 @@ npm pack --dry-run --ignore-scripts
 
 Tests cover exact text round-trips, Unicode/CRLF, validation, corrupt files, symlinks and traversal, permissions, I/O and cleanup failures, locks, two independent writers, snapshot conflicts, menu keys, narrow layouts, draft protection, cancellation, and dialog failures. Release tests create real local archives and verify consecutive versions, contents, hashes, rollback, concurrent edits, and hard interruption at two publication boundaries.
 
-`npm run test:tui` requires **Linux and tmux**. It launches actual Pi in regular and fullscreen modes, plus fullscreen with a separate `CustomEditor` fixture. It exercises the shortcut, saving, body search, native editing, replace/delete confirmation and cancellation, and collapsed large-paste preservation. Sessions have their own tmux socket, working directory, and Pi agent directory. Startup networking is disabled; personal settings and records are not loaded, no message is sent, and no provider is called.
+`npm run test:tui` requires **Linux and tmux**. It launches actual Pi in regular and fullscreen modes, plus fullscreen with a separate `CustomEditor` fixture. It exercises the shortcut, saving, body search, native editing, replace/delete confirmation and cancellation, and collapsed large-paste preservation. Layout regressions cover an expanded 70-line draft, a populated library, repeated opening/closing, stable placement while filtering and navigating, and resizing an open menu through 110×35, 60×20, and 40×12 terminals. Sessions have their own tmux socket, working directory, and Pi agent directory. Startup networking is disabled; personal settings and records are not loaded, no message is sent, and no provider is called.
 
 macOS, Windows, and other physical terminal/keyboard combinations have not been tested.
 

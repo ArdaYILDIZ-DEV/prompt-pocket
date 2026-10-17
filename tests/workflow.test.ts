@@ -52,7 +52,7 @@ test("saving captures the unsent draft verbatim with its chosen title and never 
 	assert.equal(f.store.list().prompts[0].title, "Araştırma 🐍");
 	assert.deepEqual(f.writes, []);
 	assert.match(f.notices.join(), /saved/);
-	assert.deepEqual(f.menuOptions[0], { overlay: true, overlayOptions: { width: "90%", maxHeight: "90%" } });
+	assert.deepEqual(f.menuOptions[0], { overlay: true, overlayOptions: { anchor: "center", width: 84, maxHeight: "100%" } });
 });
 
 test("menu and title cancellation preserve draft and do not create a directory", async (t) => {

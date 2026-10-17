@@ -1,7 +1,7 @@
-import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
 import {
-	Input, SelectList, fuzzyFilter, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth,
-	type Component, type Focusable, type TUI,
+	Box, Input, SelectList, Text, fuzzyFilter, matchesKey, stripTerminalSequences, truncateToWidth,
+	type Component, type Focusable, type OverlayOptions, type TUI,
 } from "@earendil-works/pi-tui";
 import type { SavedPrompt } from "./store.ts";
 
@@ -14,6 +14,11 @@ export function displayText(text: string): string {
 	return stripTerminalSequences(text).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 }
 
+/** Pi owns screen-relative placement and clamps this reading width on small terminals. */
+export const MENU_OVERLAY_OPTIONS = {
+	anchor: "center", width: 84, maxHeight: "100%",
+} satisfies OverlayOptions;
+
 export class PocketMenu implements Component, Focusable {
 	private readonly input = new Input({ prompt: "Search: ", placeholder: "title or prompt text" });
 	private list!: SelectList;
@@ -21,13 +26,13 @@ export class PocketMenu implements Component, Focusable {
 	private _focused = false;
 	private readonly prompts: SavedPrompt[];
 	private readonly canSave: boolean;
-	private readonly theme: Pick<Theme, "fg">;
+	private readonly theme: Pick<Theme, "fg" | "bg">;
 	private readonly tui: TUI;
 	private readonly keys: Pick<KeybindingsManager, "matches">;
 	private readonly done: (action: MenuAction | undefined) => void;
 
 	constructor(
-		prompts: SavedPrompt[], canSave: boolean, theme: Pick<Theme, "fg">, tui: TUI,
+		prompts: SavedPrompt[], canSave: boolean, theme: Pick<Theme, "fg" | "bg">, tui: TUI,
 		keys: Pick<KeybindingsManager, "matches">, done: (action: MenuAction | undefined) => void, query = "",
 	) {
 		this.prompts = prompts;
@@ -43,13 +48,13 @@ export class PocketMenu implements Component, Focusable {
 	get focused(): boolean { return this._focused; }
 	set focused(value: boolean) { this._focused = value; this.input.focused = value; }
 
-	private rebuild(selected?: string): void {
+	private rebuild(selected?: string, rows = this.listRows || 8): void {
 		const query = this.input.getValue();
 		const items = fuzzyFilter(this.prompts, query, (p) => `${p.title}\n${p.body}`).map((p) => ({
 			value: p.id, label: displayText(p.title),
 		}));
 		if (this.canSave) items.unshift({ value: "", label: "+ Save current draft…" });
-		this.listRows = Math.max(1, Math.min(8, this.tui.terminal.rows - 12));
+		this.listRows = rows;
 		this.list = new SelectList(items, this.listRows, {
 			selectedPrefix: (s) => this.theme.fg("accent", s),
 			selectedText: (s) => this.theme.fg("accent", s),
@@ -92,27 +97,67 @@ export class PocketMenu implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
-		if (this.listRows !== Math.max(1, Math.min(8, this.tui.terminal.rows - 12))) {
-			this.rebuild(this.list.getSelectedItem()?.value);
-		}
+		width = Math.max(1, width);
+		// Budget the WHOLE panel, not just the list: maxHeight clips, it does not reflow.
+		// Reserved list/preview space keeps the native centered anchor still while searching.
+		const height = Math.max(1, Math.min(20, this.tui.terminal.rows));
+		const padding = width >= 16 ? 1 : 0;
+		const innerWidth = Math.max(1, width - padding * 2);
+		const bordered = height >= 7;
+		const heading = height >= 4;
+		const selected = this.list.getSelectedItem()?.value;
+		const enter = selected === "" ? "save" : "load";
+		const hints = innerWidth >= 38
+			? `↑↓ choose · Enter ${enter} · Esc back\n${this.canSave ? "Ctrl+S save · " : ""}F2 edit · Ctrl+D delete`
+			: `↑↓ Enter · Esc back\n${this.canSave ? "Ctrl+S · " : ""}F2 · Ctrl+D`;
+		// Leave at least two rows for results before wrapping shortcut help.
+		const help = height >= 7
+			? new Text(this.theme.fg("dim", hints), 0, 0).render(innerWidth)
+				.slice(0, Math.max(1, height - 6))
+			: height >= 5 ? [this.theme.fg("dim", "Esc back")] : [];
+		const available = height - (bordered ? 2 : 0) - (heading ? 1 : 0) - 1 - help.length;
+		const previewRows = available >= 9 ? 4 : available >= 6 ? 2 : 0;
+		const listSpace = Math.max(0, available - previewRows);
+		// SelectList adds its own scroll-status row when necessary.
+		const rows = Math.max(1, Math.min(8, listSpace - 1));
+		if (rows !== this.listRows) this.rebuild(selected, rows);
 		const prompt = this.prompts.find((p) => p.id === this.list.getSelectedItem()?.value);
-		const preview = prompt
-			? prompt.body.split(/\r?\n/).filter((line) => line.trim()).slice(0, 2).map(displayText)
-			: [this.canSave ? "Save the editor text without sending or clearing it." : "Write a draft to save it here."];
-		const hints = `${this.canSave ? "Ctrl+S save · " : ""}↑↓ choose · Enter load · F2 edit · Ctrl+D delete · Esc back`;
-		return [
-			this.theme.fg("accent", "─".repeat(Math.max(0, width))),
-			this.theme.fg("accent", `Prompt Pocket · ${this.prompts.length} saved`),
-			...this.input.render(Math.max(1, width)),
-			...this.list.render(Math.max(1, width)),
-			"",
-			...preview.map((s) => this.theme.fg("muted", s)),
-			this.theme.fg("dim", hints),
-			this.theme.fg("accent", "─".repeat(Math.max(0, width))),
-		].map((line) => {
-			const clipped = truncateToWidth(line, Math.max(1, width));
-			return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
+		const listLines = this.list.getSelectedItem()
+			? this.list.render(innerWidth).slice(0, listSpace)
+			: [this.theme.fg("muted", this.prompts.length ? "No prompts match." : "No saved prompts yet.")].slice(0, listSpace);
+		while (listLines.length < listSpace) listLines.push("");
+		const preview: string[] = [];
+		if (previewRows) {
+			preview.push(this.theme.fg("dim", prompt ? "Preview" : selected === "" ? "Current draft" : "Library"));
+			// Bound display work even for a multi-megabyte saved prompt. Never change stored text.
+			const body = prompt
+				? prompt.body.slice(0, 2000).split(/\r?\n/).map(displayText).join("\n").trim()
+				: selected === "" ? "Save the editor text without sending or clearing it."
+				: this.prompts.length ? "Try another title or phrase from the prompt." : "Write a draft to save it here.";
+			const wrapped = new Text(this.theme.fg("muted", body), 0, 0).render(innerWidth);
+			preview.push(...wrapped.slice(0, previewRows - 1));
+			if (wrapped.length > previewRows - 1) {
+				preview[preview.length - 1] = truncateToWidth(`${preview.at(-1)} …`, innerWidth);
+			}
+			while (preview.length < previewRows) preview.push("");
+		}
+		const border = new DynamicBorder((text) => this.theme.fg("borderAccent", text));
+		const lines = [
+			...(bordered ? border.render(innerWidth) : []),
+			...(heading ? [this.theme.fg("accent", `Prompt Pocket · ${this.prompts.length} saved`)] : []),
+			...this.input.render(innerWidth),
+			...listLines,
+			...preview,
+			...help,
+			...(bordered ? border.render(innerWidth) : []),
+		];
+		// Box paints a single opaque, padded surface; no background draft can bleed through it.
+		const panel = new Box(padding, 0, (text) => this.theme.bg("customMessageBg", text));
+		panel.addChild({
+			render: () => lines.map((line) => truncateToWidth(line, innerWidth)),
+			invalidate: () => {},
 		});
+		return panel.render(width);
 	}
 
 	invalidate(): void { this.input.invalidate(); this.list.invalidate(); }

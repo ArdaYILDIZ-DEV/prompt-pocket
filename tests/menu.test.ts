@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getKeybindings, stripTerminalSequences, visibleWidth, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, getKeybindings, stripTerminalSequences, visibleWidth, type TUI } from "@earendil-works/pi-tui";
 import { PocketMenu, displayText, type MenuAction } from "../menu.ts";
 import type { SavedPrompt } from "../store.ts";
 
@@ -9,8 +9,12 @@ function menu(prompts: SavedPrompt[] = [], draft = false, query = "") {
 	const terminal = { rows: 30 };
 	const tui = { terminal, requestRender: () => {} } as unknown as TUI;
 	const results: (MenuAction | undefined)[] = [];
-	const component = new PocketMenu(prompts, draft, { fg: (_color, text) => text }, tui, getKeybindings(), (r) => results.push(r), query);
-	return { component, results, terminal };
+	const backgrounds: string[] = [];
+	const component = new PocketMenu(prompts, draft, {
+		fg: (_color, text) => text,
+		bg: (_color, text) => { backgrounds.push(text); return text; },
+	}, tui, getKeybindings(), (r) => results.push(r), query);
+	return { component, results, terminal, backgrounds };
 }
 
 test("draft is the default action and Ctrl+S can save without navigating", () => {
@@ -71,6 +75,34 @@ test("no-match search cannot edit/delete/load an unrelated record", () => {
 	assert.deepEqual(f.results, []);
 });
 
+test("layout fits the entire viewport, including short terminals", () => {
+	const prompts = Array.from({ length: 30 }, (_, i) => prompt(`${i}.md`, `Prompt ${i}`, "long preview ".repeat(100)));
+	const f = menu(prompts, true);
+	for (const rows of [35, 20, 12, 10, 7, 5, 3, 1]) {
+		f.terminal.rows = rows;
+		const lines = f.component.render(40);
+		assert.ok(lines.length <= rows, `${lines.length} menu rows exceed ${rows} terminal rows`);
+		if (rows >= 10) {
+			assert.match(lines.join("\n"), /Esc/);
+			assert.match(lines.join("\n"), /Ctrl\+D/);
+		}
+	}
+});
+
+test("filtering, empty results and preview length do not move the panel", () => {
+	const f = menu([prompt("one.md", "First", "one line"), prompt("two.md", "Second", "two\nlines")]);
+	const height = f.component.render(80).length;
+	f.component.handleInput("\x1b[B");
+	assert.equal(f.component.render(80).length, height);
+	f.component.handleInput("no match");
+	assert.equal(f.component.render(80).length, height);
+});
+
+test("long preview lines wrap rather than hiding most of the prompt", () => {
+	const f = menu([prompt("one.md", "First", `${"preview ".repeat(6)}WRAPPED-CONTENT`)]);
+	assert.match(f.component.render(30).join("\n"), /WRAPPED-CONTENT/);
+});
+
 test("narrow terminals, wide characters and resizes never overflow line width", () => {
 	const prompts = Array.from({ length: 30 }, (_, i) => prompt(`${i}.md`, `🐍 界 — kayıt ${i}`, "wide 🐍 界 text\nsecond line"));
 	const f = menu(prompts, true);
@@ -93,6 +125,29 @@ test("resize keeps the selected prompt and focus propagates to native search inp
 	f.component.render(25);
 	f.component.handleInput("\r");
 	assert.deepEqual(f.results, [{ kind: "load", prompt: b, query: "" }]);
+});
+
+test("long search queries stay on one native input row without displacing results or help", () => {
+	const f = menu([prompt("one.md", "First", "body")], true);
+	const height = f.component.render(40).length;
+	f.component.focused = true;
+	f.component.handleInput("界".repeat(200));
+	const lines = f.component.render(40);
+	assert.equal(lines.length, height);
+	assert.ok(lines.join("\n").includes(CURSOR_MARKER));
+	assert.match(lines.join("\n"), /Ctrl\+D/);
+	for (const line of lines) assert.ok(visibleWidth(line) <= 40);
+});
+
+test("the native Box paints every full-width row and preserves the search cursor marker", () => {
+	const f = menu([prompt("one.md", "First", "body")]);
+	f.component.focused = true;
+	const lines = f.component.render(60);
+	assert.ok(lines.join("\n").includes(CURSOR_MARKER));
+	// Box also samples the theme while checking its cache.
+	const painted = f.backgrounds.filter((line) => line !== "test");
+	assert.equal(painted.length, lines.length);
+	for (const line of painted) assert.equal(visibleWidth(line), 60);
 });
 
 test("stored title and body cannot inject ANSI/OSC instructions into the menu", () => {
