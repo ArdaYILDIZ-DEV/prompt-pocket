@@ -10,11 +10,12 @@ function menu(prompts: SavedPrompt[] = [], draft = false, query = "") {
 	const tui = { terminal, requestRender: () => {} } as unknown as TUI;
 	const results: (MenuAction | undefined)[] = [];
 	const backgrounds: string[] = [];
+	const accents: string[] = [];
 	const component = new PocketMenu(prompts, draft, {
-		fg: (_color, text) => text,
+		fg: (color, text) => { if (color === "accent") accents.push(text); return text; },
 		bg: (_color, text) => { backgrounds.push(text); return text; },
 	}, tui, getKeybindings(), (r) => results.push(r), query);
-	return { component, results, terminal, backgrounds };
+	return { component, results, terminal, backgrounds, accents };
 }
 
 test("draft is the default action and Ctrl+S can save without navigating", () => {
@@ -137,6 +138,40 @@ test("long search queries stay on one native input row without displacing result
 	assert.ok(lines.join("\n").includes(CURSOR_MARKER));
 	assert.match(lines.join("\n"), /Ctrl\+D/);
 	for (const line of lines) assert.ok(visibleWidth(line) <= 40);
+});
+
+test("a continuous accent frame separates all four sides from the underlying draft", () => {
+	const f = menu([prompt("one.md", "First", "body")]);
+	for (const rows of [7, 12, 30]) {
+		f.terminal.rows = rows;
+		for (const width of [4, 8, 16, 40, 84]) {
+			f.accents.length = 0;
+			const lines = f.component.render(width);
+			const top = `╭${"─".repeat(width - 2)}╮`;
+			const bottom = `╰${"─".repeat(width - 2)}╯`;
+			assert.equal(lines[0], top);
+			assert.equal(lines.at(-1), bottom);
+			assert.ok(f.accents.includes(top));
+			assert.ok(f.accents.includes(bottom));
+			assert.equal(f.accents.filter((text) => text === "│").length, (lines.length - 2) * 2);
+			for (const line of lines.slice(1, -1)) {
+				assert.ok(line.startsWith("│") && line.endsWith("│"));
+				assert.equal(visibleWidth(line), width);
+			}
+			assert.ok(lines.length <= rows);
+		}
+	}
+});
+
+test("tiny viewports omit the frame to preserve usable content", () => {
+	const f = menu();
+	for (const [width, rows] of [[1, 30], [2, 30], [3, 30], [40, 1], [40, 3], [40, 5]]) {
+		f.terminal.rows = rows;
+		const lines = f.component.render(width);
+		assert.doesNotMatch(lines.join("\n"), /[╭╮╰╯│]/u);
+		assert.ok(lines.length <= rows);
+		for (const line of lines) assert.ok(visibleWidth(line) <= width);
+	}
 });
 
 test("the native Box paints every full-width row and preserves the search cursor marker", () => {

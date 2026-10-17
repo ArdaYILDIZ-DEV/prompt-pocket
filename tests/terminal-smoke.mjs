@@ -162,6 +162,9 @@ try {
 			assert.ok(screen.includes(label), `Missing ${label} at ${tmux("display-message", "-p", "-t", pane, "#{pane_width}x#{pane_height}").trim()}\n${screen}`);
 		}
 		assert.match(screen, /[→›❯>]\s*(?:\+ Save current draft|Layout)/u, `Selected item not visible\n${screen}`);
+		assert.match(screen, /╭─+╮/u, `Top frame not visible\n${screen}`);
+		assert.match(screen, /╰─+╯/u, `Bottom frame not visible\n${screen}`);
+		assert.match(screen, /│[^\n]*Prompt Pocket[^\n]*│/u, `Side frame not visible\n${screen}`);
 		return screen.split("\n").findIndex((line) => line.includes("Prompt Pocket"));
 	};
 	for (const [width, height] of [[110, 35], [60, 20], [40, 12], [110, 35]]) {

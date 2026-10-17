@@ -1,4 +1,4 @@
-import { DynamicBorder, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
+import { type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
 import {
 	Box, Input, SelectList, Text, fuzzyFilter, matchesKey, stripTerminalSequences, truncateToWidth,
 	type Component, type Focusable, type OverlayOptions, type TUI,
@@ -102,8 +102,8 @@ export class PocketMenu implements Component, Focusable {
 		// Reserved list/preview space keeps the native centered anchor still while searching.
 		const height = Math.max(1, Math.min(20, this.tui.terminal.rows));
 		const padding = width >= 16 ? 1 : 0;
-		const innerWidth = Math.max(1, width - padding * 2);
-		const bordered = height >= 7;
+		const bordered = height >= 7 && width >= 4;
+		const innerWidth = Math.max(1, width - padding * 2 - (bordered ? 2 : 0));
 		const heading = height >= 4;
 		const selected = this.list.getSelectedItem()?.value;
 		const enter = selected === "" ? "save" : "load";
@@ -141,22 +141,24 @@ export class PocketMenu implements Component, Focusable {
 			}
 			while (preview.length < previewRows) preview.push("");
 		}
-		const border = new DynamicBorder((text) => this.theme.fg("borderAccent", text));
 		const lines = [
-			...(bordered ? border.render(innerWidth) : []),
 			...(heading ? [this.theme.fg("accent", `Prompt Pocket · ${this.prompts.length} saved`)] : []),
 			...this.input.render(innerWidth),
 			...listLines,
 			...preview,
 			...help,
-			...(bordered ? border.render(innerWidth) : []),
 		];
-		// Box paints a single opaque, padded surface; no background draft can bleed through it.
-		const panel = new Box(padding, 0, (text) => this.theme.bg("customMessageBg", text));
-		panel.addChild({
-			render: () => lines.map((line) => truncateToWidth(line, innerWidth)),
-			invalidate: () => {},
-		});
+		const pad = " ".repeat(padding);
+		const content = lines.map((line) => `${pad}${truncateToWidth(line, innerWidth, "…", true)}${pad}`);
+		const border = (text: string) => this.theme.fg("accent", text);
+		const framed = bordered ? [
+			border(`╭${"─".repeat(width - 2)}╮`),
+			...content.map((line) => `${border("│")}${line}${border("│")}`),
+			border(`╰${"─".repeat(width - 2)}╯`),
+		] : content;
+		// Box paints the entire surface, including the frame; no draft can bleed through it.
+		const panel = new Box(0, 0, (text) => this.theme.bg("customMessageBg", text));
+		panel.addChild({ render: () => framed, invalidate: () => {} });
 		return panel.render(width);
 	}
 
