@@ -1,0 +1,7 @@
+node_modules/
+*.tgz
+.test-artifacts/
+releases/
+.release-lock/
+*.log
+.DS_Store
